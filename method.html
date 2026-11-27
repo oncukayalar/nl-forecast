@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Method · NL power price forecast</title>
+<meta name="description" content="How the numbers of the NL power price forecast are made.">
+<style>
+/* The look of both pages (redesign of 2026-11-26): dark only, tokens from the owner's Backtest Lab. */
+@font-face { font-family: Inter; font-weight: 100 900; font-style: normal; font-display: swap;
+  src: url(assets/fonts/InterVariable.woff2) format("woff2"); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 400; font-style: normal; font-display: swap;
+  src: url(assets/fonts/JetBrainsMono-Regular.woff2) format("woff2"); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 600; font-style: normal; font-display: swap;
+  src: url(assets/fonts/JetBrainsMono-SemiBold.woff2) format("woff2"); }
+:root {
+  color-scheme: dark;
+  --bg: #0A0F1E; --card: #121A2E; --panel: #0D1426; --border: #1F2A44; --border-hi: #2B3760;
+  --text: #E2E8F0; --muted: #94A3B8; --soft: #CBD5E1; --track: #172038;
+  --accent: #8B5CF6; --accent-text: #C4B5FD; --accent-soft: #DDD6FE; --link: #22D3EE; --link-hi: #67E8F9;
+  --gain: #34D399; --loss: #FB7185; --warn: #FBBF24;
+  --series-1: #8B5CF6; --ink: #F8FAFC;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--bg); }
+body { margin: 0 auto; padding: 32px 20px 48px; max-width: 1120px; background: var(--bg); color: var(--text);
+  font: 16px/1.55 Inter, system-ui, sans-serif; }
+h1 { font-size: 34px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 8px; color: var(--accent-text); }
+h2 { font-size: 20px; font-weight: 700; margin: 32px 0 8px; }
+h3 { font-size: 16px; font-weight: 700; margin: 20px 0 4px; }
+a { color: var(--link); } a:hover { color: var(--link-hi); }
+:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+code, .label { overflow-wrap: anywhere; }
+code, .num { font-family: 'JetBrains Mono', monospace; }
+code { background: var(--card); border: 1px solid var(--border); padding: 1px 5px; border-radius: 6px; font-size: 0.88em; }
+.num { font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.hero { border: 1px solid var(--border-hi); border-radius: 22px; padding: 26px 28px; display: flex; flex-direction: column; gap: 14px;
+  background: linear-gradient(115deg, rgba(139,92,246,0.30) 0%, rgba(18,26,46,0.94) 46%, rgba(34,211,238,0.16) 100%), var(--card); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .gradtext { background: linear-gradient(90deg, #C4B5FD, #67E8F9); -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; }
+}
+.badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #1F6F5A; border-radius: 999px; padding: 6px 14px;
+  background: rgba(52,211,153,0.10); color: #6EE7B7; font-size: 13px; font-weight: 600; }
+.pill { font: inherit; font-size: 14px; font-weight: 600; min-height: 44px; padding: 8px 18px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: rgba(18,26,46,0.6); color: var(--soft); }
+.pill[aria-pressed="true"] { border-color: var(--accent); background: rgba(139,92,246,0.18); color: var(--accent-soft); }
+.meta, .note, .sub, .mini { color: var(--muted); font-size: 14px; }
+.meta b { color: var(--text); font-weight: 600; }
+.lede { max-width: 760px; color: var(--soft); }
+.cards, .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+@media (max-width: 600px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } .card { padding: 14px; } .card .big { font-size: 26px; } }
+.card { background: radial-gradient(120% 90% at 100% 0%, rgba(34,211,238,0.16), rgba(18,26,46,0) 60%), var(--card);
+  border: 1px solid var(--border); border-radius: 18px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card .label { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.card .big, .big { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; margin: 0; line-height: 1.2; }
+.card .sub, .card .mini { margin: 0; font-size: 13px; color: var(--muted); }
+.up { color: var(--gain); } .down { color: var(--loss); }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.panel { border: 1px solid var(--border); border-radius: 20px; background: var(--panel); padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.chip { border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; color: var(--muted); overflow-wrap: anywhere; }
+.chip b { color: var(--text); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.tile { border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; background: var(--card); min-width: 0; }
+.tile .label { font-size: 12px; color: var(--muted); }
+.bar { display: block; height: 8px; border-radius: 999px; background: var(--track); }
+.bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.note { max-width: 780px; line-height: 1.6; }
+ul.note { padding-left: 20px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--track); }
+th:first-child, td:first-child, th.text, td.text { text-align: left; }
+thead th { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  border-bottom-color: var(--border); }
+tr.official td { color: var(--accent-soft); }
+.table-wrap { overflow-x: auto; }
+.fig { width: 100%; min-height: 280px; margin: 8px 0 4px; }
+details.label { display: inline; } details.label summary { display: inline; cursor: pointer; text-decoration: underline dotted; }
+details.label code { display: block; margin: 2px 0 4px; }
+summary { cursor: pointer; }
+.foot a { overflow-wrap: anywhere; }
+.foot { display: flex; flex-direction: column; gap: 10px; padding: 4px 6px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+@media (max-width: 600px) {
+  body { padding: 20px 16px 40px; }
+  .hero { padding: 20px 18px; } .panel { padding: 16px; }
+  h1 { font-size: 28px; }
+}
+/* The page without the script: every price and tab stacked; the controls do nothing then. */
+.no-js .tabs, .no-js .hero .switch { display: none; }
+.hero .switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.price-title { margin: 28px 0 0; font-size: 22px; }
+.cards-link { grid-column: 1 / -1; margin: 0; }
+.cards > .note { grid-column: 1 / -1; }
+.panel h3 { margin: 4px 0 0; }
+.value .big { font-size: 44px; }
+.bars { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
+.barlabel { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--soft); margin-bottom: 4px; overflow-wrap: anywhere; }
+td.barcell { min-width: 90px; width: 22%; }
+.footlinks { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; }
+.card h3 { text-transform: none; letter-spacing: 0; font-size: 16px; color: var(--text); margin: 4px 0 0; }
+/* With the script: header, the selected price's cards, the tabs, the panel, the footer. */
+.js .wrap > * { order: 3; }
+.js .wrap > .hero { order: 0; } .js .wrap > .cards { order: 1; } .js .wrap > .tabs { order: 2; } .js .wrap > .foot { order: 4; }
+.js .price-title { display: none; }
+/* Leaderboard: scrolls inside its box on a phone; bars are decoration, coloured by row kind. */
+table.lb { min-width: 620px; }
+table.lb td:first-child { overflow-wrap: normal; word-break: normal; min-width: 190px; }
+table.lb td:first-child code { overflow-wrap: anywhere; }
+table.lb td.barcell { min-width: 120px; }
+table.lb .bar > span { background: #64748B; }
+table.lb .bar > span.official { background: #8B5CF6; }
+table.lb .bar > span.family { background: #22D3EE; }
+.bars .bar > span.bench { background: #64748B; }
+@media (max-width: 600px) {
+  table.lb { min-width: 0; }
+  table.lb th:nth-child(2), table.lb td:nth-child(2), table.lb th:nth-child(3), table.lb td:nth-child(3) { display: none; }
+  table.lb td:first-child { min-width: 0; }
+  table.lb td.barcell { min-width: 70px; }
+}
+/* Plotly paints the day picker's header and rows #F4FAFF on hover and when open; the page keeps them dark. */
+.updatemenu-item-rect { fill: #121A2E !important; }
+.updatemenu-dropdown-button:hover .updatemenu-item-rect, .updatemenu-header:hover .updatemenu-item-rect { fill: #1F2A44 !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+<h1 class="gradtext">Method</h1>
+<p class="meta">Last update <b>2026-11-27 11:31 Europe/Amsterdam</b>. <a href="index.html">Back to the forecasts</a></p>
+</header>
+
+<h2 id="numbers">How these numbers are made</h2>
+<p class="note">The gain is how much lower the official forecast's mean absolute error (MAE, pooled over its hours) is than that of the best benchmark of the window; a negative gain means the benchmark was better. The best benchmark of a window is the one benchmark series with the lowest MAE on the official forecast's hours of that window (day-ahead price: the same hour yesterday or a week earlier; imbalance prices: those, the day-ahead price, and the day-ahead price plus its usual spread), one fixed series, never the best of each day picked after the fact. A day is won when the official forecast's MAE of that day is below that benchmark's; a tie is not won. Every benchmark is built with what was known when the forecast was issued, and only fully known delivery days count.</p>
+
+<h2 id="method">Method</h2>
+<p>A job runs every day at 11:30 Europe/Amsterdam, when it issues the day-ahead price forecast for the next day before the auction closes at 12:00, and at 15:30, when it issues the imbalance price forecasts for the next day. Each run fetches data from the ENTSO-E Transparency Platform (day-ahead prices, load forecast, wind and solar forecasts, imbalance prices) and the morning's ECMWF weather forecast for ten points in the Netherlands and Germany (wind speed at 100 m, solar radiation, temperature), issues what is due (the day-ahead forecast with Timestral (Mistral AI, Timestral-209M) since 2026-11-24, before that with TimeH2O-v1 (H2O.ai, checkpoint timeh2o-v1), both pretrained time-series models used without further training, with custom features built from the price history, the Dutch holiday calendar and the weather forecast for the target day; the imbalance forecasts with the mean of three models per target: LightGBM, a gradient-boosted tree model trained every day, and two pretrained time-series models used without further training, Chronos-2 (Amazon) and Timestral (Mistral AI; TimeH2O-v1 until 2026-11-24)), fetches the actuals that have been published since, and rescores. When the ENTSO-E Transparency Platform has no Dutch day-ahead price for a day whose auction has cleared, the job takes it from EnergyZero, whose hourly prices agreed with ENTSO-E's to within 0.01 EUR/MWh from November 2024 to November 2026. All series are the hourly mean of the published values; since the day-ahead market moved to 15-minute products the day-ahead target is the hourly mean of the four 15-minute prices, stitched onto the hourly history before the switch. The imbalance targets are hourly means of TenneT's imbalance prices, read from the ENTSO-E Transparency Platform, which has one price per 15 minutes: the take price is what a party pays for a shortage, the feed price what it gets for a surplus. Both markets settle per quarter-hour; an hourly mean leaves out the shape within the hour, which matters most for the imbalance prices. The day-ahead forecast is issued at 11:30 the day before delivery since 2026-11-20; before that it was issued at 15:30 two days before delivery. Imbalance forecasts are issued one day ahead. When the ENTSO-E data for the next day is missing at 15:30, the job tries again every hour until 19:30 and then issues with the data there is; the issue time of every forecast is in its file. A forecast is never edited after it is issued: a missed run leaves a gap, nothing is backfilled.</p>
+<p>On a day Timestral cannot make the day-ahead forecast, Chronos-2 or LightGBM makes it; the model label of the forecast shows which. The imbalance forecasts are this blend since 2026-11-18: the three models have equal weights, a model that cannot run on a day is left out, and the model label of each forecast lists the models that made it. TimeH2O-v1 is evaluated on this page live since 2026-11-14; since 2026-11-24 it runs every day as a benchmark beside the forecasts of this page (benchmarks/), and Timestral makes the day-ahead forecast. This is an independent evaluation; the page is not affiliated with or endorsed by H2O.ai or Mistral AI.</p>
+
+<h2 id="band">The 80 % band</h2>
+<p>The shaded band runs from P10 to P90: the price should fall below it in 1 hour in 10 and above it in 1 hour in 10, so 8 hours in 10 inside. It is the models' own: Timestral's P10 and P90 for the day-ahead price, and for the imbalance prices the mean of the three blend members' P10s and the mean of their P90s. It is made and committed with the forecast. On 326 past days (2026-01-01 to 2026-11-22) it held 78.8 % of the day-ahead hours, 79.4 % of the imbalance take hours and 79.2 % of the imbalance feed hours; the imbalance feed price rose above P90 in 12.1 % of hours, and the day-ahead price at 00:00 and 01:00 was inside the band in only 54.3 % and 68.4 % of hours. Those were past days, and Timestral's weights (2026-10-15) are later than most of them: the live record on the forecast page is the test. A day forecast by a fallback model has no band.</p>
+
+
+<h2 id="trading">How the trader scores are computed</h2>
+<p class="note">For a battery owner: a battery of 1 MW and 4 MWh that charges in the hours the forecast calls cheapest and discharges in the dearest, empty at the start and the end of each day, earns this share of what perfect foresight of the prices would earn (days whose best schedule earns nothing are left out); the same for the best simple benchmark. For a balance-responsible party: whether the imbalance price ends above or below the day-ahead price decides whether being long or short pays; the share of hours the forecast is on the right side of the day-ahead price, against the day-ahead price plus its usual spread (hours within 0.01 €/MWh of the day-ahead price are left out, a forecast that close counts as wrong).</p>
+
+<h2 id="metrics">Every error metric (the table of scores/latest.csv)</h2>
+<h3>Error metrics, €/MWh</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Target</th><th>Window</th><th>Days</th><th>Model MAE</th><th>Model RMSE</th><th>rMAE</th><th>Model MAE / best benchmark</th><th>Day-ahead price as forecast, MAE</th><th>Day-ahead price + usual spread, MAE</th><th>Yesterday, MAE</th><th>Last week, MAE</th></tr></thead>
+<tbody>
+
+<tr><td>Day-ahead price</td><td>1 d</td><td>1 / 0</td><td>18.8</td><td>24.9</td><td>–</td><td>–</td><td>–</td><td>–</td><td>29.2</td><td>83.9</td></tr>
+
+<tr><td>Day-ahead price</td><td>7 d</td><td>7 / 0</td><td>20.7</td><td>28.1</td><td>0.34</td><td>0.64</td><td>–</td><td>–</td><td>32.4</td><td>60.1</td></tr>
+
+<tr><td>Day-ahead price</td><td>30 d</td><td>12 / 0</td><td>22.8</td><td>30.5</td><td>0.29</td><td>0.57</td><td>–</td><td>–</td><td>40.0</td><td>77.5</td></tr>
+
+<tr><td>Imbalance take</td><td>1 d</td><td>1 / 0</td><td>21.6</td><td>24.9</td><td>–</td><td>–</td><td>24.7</td><td>25.0</td><td>24.0</td><td>99.6</td></tr>
+
+<tr><td>Imbalance take</td><td>7 d</td><td>7 / 0</td><td>26.3</td><td>39.1</td><td>0.35</td><td>0.96</td><td>27.5</td><td>30.0</td><td>53.8</td><td>75.9</td></tr>
+
+<tr><td>Imbalance take</td><td>30 d</td><td>11 / 0</td><td>30.1</td><td>42.8</td><td>0.26</td><td>1.01</td><td>29.9</td><td>34.4</td><td>59.7</td><td>115.8</td></tr>
+
+<tr><td>Imbalance feed</td><td>1 d</td><td>1 / 0</td><td>29.1</td><td>39.7</td><td>–</td><td>–</td><td>32.8</td><td>18.9</td><td>33.4</td><td>110.4</td></tr>
+
+<tr><td>Imbalance feed</td><td>7 d</td><td>7 / 0</td><td>32.3</td><td>41.8</td><td>0.47</td><td>1.15</td><td>34.2</td><td>28.2</td><td>54.1</td><td>68.5</td></tr>
+
+<tr><td>Imbalance feed</td><td>30 d</td><td>11 / 0</td><td>34.3</td><td>44.1</td><td>0.32</td><td>1.06</td><td>38.2</td><td>32.4</td><td>57.1</td><td>105.5</td></tr>
+
+</tbody>
+</table>
+</div>
+<p class="note">"Days" is scored days / days with a forecast but missing actuals. The last four columns are benchmarks, each built with what was known when the model's forecast was issued. "Yesterday" is the same hour of the latest fully known day, "Last week" the same hour a week earlier. "Day-ahead price as forecast" (imbalance targets) is the error of the day-ahead price of the same hour, taken as the forecast of the imbalance price; it uses only day-ahead prices that were published when the imbalance forecast was issued. "Day-ahead price + usual spread" adds to that price the median, over the last 28 days known at the issue, of the imbalance price minus the day-ahead price in the same hour of the day: the feed price lies below the day-ahead price on most hours and the take price a little above it on average, so the price alone is a weak forecast, most of all of the feed price, and this is the benchmark an imbalance forecast has to beat. rMAE is the model MAE divided by the last-week MAE, the relative error used in the electricity price forecasting literature; below 1 is better than that naive forecast. The last-week forecast is a weak benchmark in this market, so the table also gives the model MAE divided by the lowest benchmark MAE of the row. Both ratios are given for the 7-day and 30-day windows. Day-ahead price, scored days forecast by TimeH2O-v1 / by Timestral / by a fallback model: 1-day window 0 / 1 / 0, 7-day window 4 / 3 / 0, 30-day window 9 / 3 / 0. Day-ahead price, scored days of the 30-day window issued the day before / two days before: 7 / 5. Imbalance prices, scored days with TimeH2O-v1 in the forecast / with Timestral / with neither: take price: 1-day window 0 / 1 / 0, 7-day window 6 / 1 / 0, 30-day window 6 / 1 / 4; feed price: 1-day window 0 / 1 / 0, 7-day window 6 / 1 / 0, 30-day window 6 / 1 / 4.</p>
+
+<h2 id="charts">Reading the charts and the leaderboard</h2>
+<p class="note">The last 30 delivery days per target: the actual price, the official forecast, TimeH2O-v1 as benchmark and the best simple benchmark of the last 30 days. Pick a day from the menu; the members of the imbalance forecasts appear when clicked in the legend. The latest fully known day differs per target: the day-ahead price of a day is published around 13:00 the day before, the imbalance prices of a day are published shortly after midnight.</p>
+<p class="note">Every forecast of the live record, each on its own delivery days (the number in brackets), mean absolute error in €/MWh, the official forecast first, then the others, lowest since launch first. The official forecast is split by the model family that made it. Members are the parts of the imbalance blends, published from the switch to Timestral on. TimeH2O-v1 runs every day as a benchmark beside the official forecast. Simple benchmarks are built with what was known when the official forecast was issued.</p>
+
+<h2 id="downloads">Downloads</h2>
+<p>Raw forecasts: <a href="https://github.com/oncukayalar/nl-forecast/tree/main/forecasts">one CSV per issue date</a> (<code>issue_time_utc,target_time_utc,target,value,model_version</code>), written once and only ever appended to. Blend members: <a href="https://github.com/oncukayalar/nl-forecast/tree/main/members">one CSV per issue date</a> (<code>issue_time_utc,target_time_utc,target,value,member</code>), from the switch to Timestral on. Benchmark: <a href="https://github.com/oncukayalar/nl-forecast/tree/main/benchmarks">TimeH2O-v1's forecasts, one CSV per issue date</a>, same columns as the forecasts. Both are append-only too. 80 % bands: <a href="https://github.com/oncukayalar/nl-forecast/tree/main/bands">one CSV per issue date</a> (<code>issue_time_utc,target_time_utc,target,p10,p90,model_version</code>), published in the same commit as the forecast and append-only too. Scores: <a href="scores/latest.csv">scores/latest.csv</a>; the actuals they are computed from: <a href="scores/actuals.csv">scores/actuals.csv</a>. The <a href="https://github.com/oncukayalar/nl-forecast/commits/main/forecasts">commit history of the forecast files</a> is the proof of issue time.</p>
+<p class="foot"><a href="index.html">Back to the forecasts</a></p>
+</div>
+</body>
+</html>
